@@ -26,6 +26,7 @@ typedef NS_ENUM(NSInteger, CaptureSessionStatus) {
 @property (nonatomic, assign) NSUInteger snapshotLength;
 @property (nonatomic, assign) NSTimeInterval timeout;
 @property (nonatomic, assign) BOOL immediateMode;
+@property (nonatomic, assign) BOOL privateMode;
 
 - (instancetype)initWithBufferSize:(NSUInteger)bufferSize
                    promiscuousMode:(BOOL)promiscuousMode

@@ -11,17 +11,17 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-/// Capture session state
-typedef NS_ENUM(NSInteger, CaptureSessionState) {
-    CaptureSessionStateStopped,
-    CaptureSessionStateStarting,
-    CaptureSessionStateRunning,
-    CaptureSessionStateStopping,
-    CaptureSessionStateError
+/// Capture session state (live capture pipeline; distinct from `CaptureSession` in Models).
+typedef NS_ENUM(NSInteger, PIPCapSessionState) {
+    PIPCapSessionStateStopped,
+    PIPCapSessionStateStarting,
+    PIPCapSessionStateRunning,
+    PIPCapSessionStateStopping,
+    PIPCapSessionStateError
 };
 
-/// Capture configuration
-@interface CaptureConfiguration : NSObject <NSCoding, NSCopying>
+/// Live capture configuration
+@interface PIPCapConfiguration : NSObject <NSCoding, NSCopying>
 
 @property (nonatomic, assign) NSUInteger bufferSize;
 @property (nonatomic, assign) BOOL promiscuousMode;
@@ -33,6 +33,8 @@ typedef NS_ENUM(NSInteger, CaptureSessionState) {
 @property (nonatomic, assign) BOOL captureHTTPS;
 @property (nonatomic, assign) BOOL captureTCP;
 @property (nonatomic, assign) BOOL captureUDP;
+/// When YES, captured data is not written to disk by storage/export helpers.
+@property (nonatomic, assign) BOOL privateMode;
 
 - (instancetype)initWithBufferSize:(NSUInteger)bufferSize
                    promiscuousMode:(BOOL)promiscuousMode
@@ -43,7 +45,8 @@ typedef NS_ENUM(NSInteger, CaptureSessionState) {
                        captureHTTP:(BOOL)captureHTTP
                       captureHTTPS:(BOOL)captureHTTPS
                          captureTCP:(BOOL)captureTCP
-                        captureUDP:(BOOL)captureUDP;
+                        captureUDP:(BOOL)captureUDP
+                        privateMode:(BOOL)privateMode;
 
 /// Default configuration
 + (instancetype)defaultConfiguration;
@@ -56,13 +59,13 @@ typedef NS_ENUM(NSInteger, CaptureSessionState) {
 
 @end
 
-/// Capture session
-@interface CaptureSession : NSObject
+/// Live capture session handle
+@interface PIPCapSession : NSObject
 
 @property (nonatomic, copy) NSUUID *sessionId;
 @property (nonatomic, copy) NSString *name;
-@property (nonatomic, strong) CaptureConfiguration *configuration;
-@property (nonatomic, assign) CaptureSessionState state;
+@property (nonatomic, strong) PIPCapConfiguration *configuration;
+@property (nonatomic, assign) PIPCapSessionState state;
 @property (nonatomic, assign) NSUInteger packetsCaptured;
 @property (nonatomic, assign) NSUInteger packetsFiltered;
 @property (nonatomic, assign) NSTimeInterval startTime;
@@ -71,7 +74,7 @@ typedef NS_ENUM(NSInteger, CaptureSessionState) {
 
 - (instancetype)initWithSessionId:(NSUUID *)sessionId
                              name:(NSString *)name
-                    configuration:(CaptureConfiguration *)configuration;
+                    configuration:(PIPCapConfiguration *)configuration;
 
 /// Start time as string
 - (NSString *)startTimeString;
@@ -95,7 +98,7 @@ typedef NS_ENUM(NSInteger, CaptureSessionState) {
 - (void)packetCaptureDidCapturePacket:(CapturedPacket *)packet;
 
 /// Called when capture session state changes
-- (void)packetCaptureDidChangeState:(CaptureSessionState)state;
+- (void)packetCaptureDidChangeState:(PIPCapSessionState)state;
 
 /// Called when an error occurs
 - (void)packetCaptureDidEncounterError:(NSError *)error;
@@ -109,7 +112,7 @@ typedef NS_ENUM(NSInteger, CaptureSessionState) {
 @protocol PacketCaptureServiceProtocol <NSObject>
 
 /// Start capture session with configuration
-- (BOOL)startCaptureWithConfiguration:(CaptureConfiguration *)configuration
+- (BOOL)startCaptureWithConfiguration:(PIPCapConfiguration *)configuration
                                 error:(NSError **)error;
 
 /// Stop current capture session
@@ -122,7 +125,7 @@ typedef NS_ENUM(NSInteger, CaptureSessionState) {
 - (BOOL)resumeCaptureWithError:(NSError **)error;
 
 /// Get current capture session
-- (CaptureSession * _Nullable)currentSession;
+- (PIPCapSession * _Nullable)currentSession;
 
 /// Get capture statistics
 - (NSDictionary *)captureStatistics;
@@ -150,6 +153,9 @@ typedef NS_ENUM(NSInteger, CaptureSessionState) {
 /// Shared instance
 + (instancetype)sharedService;
 
+@property (nonatomic, assign, readonly, getter=isCapturing) BOOL isCapturing;
+@property (nonatomic, assign, readonly, getter=isPaused) BOOL isPaused;
+
 /// Initialize with delegate
 - (instancetype)initWithDelegate:(id<PacketCaptureDelegate>)delegate;
 
@@ -164,6 +170,12 @@ typedef NS_ENUM(NSInteger, CaptureSessionState) {
 
 /// Enable/disable VPN packet exclusion
 + (BOOL)setVPNPacketExclusionEnabled:(BOOL)enabled error:(NSError **)error;
+
+/// Snapshot of in-memory packets for UI refresh.
+- (NSArray<CapturedPacket *> *)snapshotCapturedPackets;
+
+/// Demo hook: inject a packet into the live capture buffer (requires active capture).
+- (void)simulatePacketCapture:(CapturedPacket *)packet;
 
 @end
 

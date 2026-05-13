@@ -94,6 +94,9 @@ typedef NS_OPTIONS(NSUInteger, PacketFlag) {
 /// Convert to dictionary for JSON serialization
 - (NSDictionary *)toDictionary;
 
+/// Protocol string for display and filters
+- (NSString *)protocolString;
+
 /// Create from dictionary (JSON deserialization)
 + (instancetype)fromDictionary:(NSDictionary *)dictionary;
 

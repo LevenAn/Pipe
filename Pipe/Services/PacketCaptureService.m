@@ -6,19 +6,22 @@
 //
 
 #import "PacketCaptureService.h"
+#import "VPNManagerService.h"
 #import <NetworkExtension/NetworkExtension.h>
+
+static NSString *const kVPNExclusionDefaultsKey = @"PipeVPNPacketExclusionEnabled";
 
 @interface PacketCaptureService ()
 
-@property (nonatomic, strong) CaptureSession *currentSession;
+@property (nonatomic, strong, readwrite) PIPCapSession *currentSession;
 @property (nonatomic, strong) NSMutableArray<CapturedPacket *> *capturedPackets;
 @property (nonatomic, strong) NSMutableDictionary *statistics;
-@property (nonatomic, assign) BOOL isCapturing;
-@property (nonatomic, assign) BOOL isPaused;
+@property (nonatomic, assign, readwrite, getter=isCapturing) BOOL isCapturing;
+@property (nonatomic, assign, readwrite, getter=isPaused) BOOL isPaused;
 
 @end
 
-@implementation CaptureConfiguration
+@implementation PIPCapConfiguration
 
 - (instancetype)initWithBufferSize:(NSUInteger)bufferSize
                    promiscuousMode:(BOOL)promiscuousMode
@@ -29,7 +32,8 @@
                        captureHTTP:(BOOL)captureHTTP
                       captureHTTPS:(BOOL)captureHTTPS
                          captureTCP:(BOOL)captureTCP
-                        captureUDP:(BOOL)captureUDP {
+                        captureUDP:(BOOL)captureUDP
+                        privateMode:(BOOL)privateMode {
     self = [super init];
     if (self) {
         _bufferSize = bufferSize;
@@ -42,12 +46,13 @@
         _captureHTTPS = captureHTTPS;
         _captureTCP = captureTCP;
         _captureUDP = captureUDP;
+        _privateMode = privateMode;
     }
     return self;
 }
 
 + (instancetype)defaultConfiguration {
-    return [[CaptureConfiguration alloc] initWithBufferSize:65536
+    return [[PIPCapConfiguration alloc] initWithBufferSize:65536
                                             promiscuousMode:NO
                                                  interfaces:@[@"en0", @"pdp_ip0"]
                                                     filters:@[]
@@ -56,7 +61,8 @@
                                                 captureHTTP:YES
                                                captureHTTPS:YES
                                                   captureTCP:YES
-                                                 captureUDP:YES];
+                                                 captureUDP:YES
+                                                privateMode:NO];
 }
 
 - (NSDictionary *)toDictionary {
@@ -77,6 +83,7 @@
     dict[@"captureHTTPS"] = @(self.captureHTTPS);
     dict[@"captureTCP"] = @(self.captureTCP);
     dict[@"captureUDP"] = @(self.captureUDP);
+    dict[@"privateMode"] = @(self.privateMode);
     
     return [dict copy];
 }
@@ -107,8 +114,9 @@
     BOOL captureHTTPS = [dictionary[@"captureHTTPS"] boolValue];
     BOOL captureTCP = [dictionary[@"captureTCP"] boolValue];
     BOOL captureUDP = [dictionary[@"captureUDP"] boolValue];
+    BOOL privateMode = [dictionary[@"privateMode"] boolValue];
     
-    return [[CaptureConfiguration alloc] initWithBufferSize:bufferSize
+    return [[PIPCapConfiguration alloc] initWithBufferSize:bufferSize
                                             promiscuousMode:promiscuousMode
                                                  interfaces:interfaces
                                                     filters:filters
@@ -117,7 +125,8 @@
                                                 captureHTTP:captureHTTP
                                                captureHTTPS:captureHTTPS
                                                   captureTCP:captureTCP
-                                                 captureUDP:captureUDP];
+                                                 captureUDP:captureUDP
+                                                privateMode:privateMode];
 }
 
 #pragma mark - NSCoding
@@ -135,6 +144,7 @@
         _captureHTTPS = [coder decodeBoolForKey:@"captureHTTPS"];
         _captureTCP = [coder decodeBoolForKey:@"captureTCP"];
         _captureUDP = [coder decodeBoolForKey:@"captureUDP"];
+        _privateMode = [coder decodeBoolForKey:@"privateMode"];
     }
     return self;
 }
@@ -150,12 +160,13 @@
     [coder encodeBool:self.captureHTTPS forKey:@"captureHTTPS"];
     [coder encodeBool:self.captureTCP forKey:@"captureTCP"];
     [coder encodeBool:self.captureUDP forKey:@"captureUDP"];
+    [coder encodeBool:self.privateMode forKey:@"privateMode"];
 }
 
 #pragma mark - NSCopying
 
 - (id)copyWithZone:(NSZone *)zone {
-    CaptureConfiguration *copy = [[[self class] allocWithZone:zone] init];
+    PIPCapConfiguration *copy = [[[self class] allocWithZone:zone] init];
     if (copy) {
         copy->_bufferSize = self.bufferSize;
         copy->_promiscuousMode = self.promiscuousMode;
@@ -167,6 +178,7 @@
         copy->_captureHTTPS = self.captureHTTPS;
         copy->_captureTCP = self.captureTCP;
         copy->_captureUDP = self.captureUDP;
+        copy->_privateMode = self.privateMode;
     }
     return copy;
 }
@@ -174,23 +186,23 @@
 #pragma mark - Description
 
 - (NSString *)description {
-    return [NSString stringWithFormat:@"<CaptureConfiguration: bufferSize=%lu, interfaces=%@, filters=%lu>",
+    return [NSString stringWithFormat:@"<PIPCapConfiguration: bufferSize=%lu, interfaces=%@, filters=%lu>",
             (unsigned long)self.bufferSize, self.interfaces, (unsigned long)self.filters.count];
 }
 
 @end
 
-@implementation CaptureSession
+@implementation PIPCapSession
 
 - (instancetype)initWithSessionId:(NSUUID *)sessionId
                              name:(NSString *)name
-                    configuration:(CaptureConfiguration *)configuration {
+                    configuration:(PIPCapConfiguration *)configuration {
     self = [super init];
     if (self) {
         _sessionId = [sessionId copy];
         _name = [name copy];
         _configuration = configuration;
-        _state = CaptureSessionStateStopped;
+        _state = PIPCapSessionStateStopped;
         _packetsCaptured = 0;
         _packetsFiltered = 0;
         _startTime = 0;
@@ -259,7 +271,7 @@
 #pragma mark - Description
 
 - (NSString *)description {
-    return [NSString stringWithFormat:@"<CaptureSession: %@, state=%ld, packets=%lu>",
+    return [NSString stringWithFormat:@"<PIPCapSession: %@, state=%ld, packets=%lu>",
             self.name, (long)self.state, (unsigned long)self.packetsCaptured];
 }
 
@@ -305,7 +317,7 @@
 
 #pragma mark - PacketCaptureServiceProtocol
 
-- (BOOL)startCaptureWithConfiguration:(CaptureConfiguration *)configuration
+- (BOOL)startCaptureWithConfiguration:(PIPCapConfiguration *)configuration
                                 error:(NSError **)error {
     if (self.isCapturing) {
         if (error) {
@@ -315,25 +327,29 @@
         }
         return NO;
     }
+
+    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"PipePrivateCaptureMode"]) {
+        configuration.privateMode = YES;
+    }
     
     // Create new session
-    self.currentSession = [[CaptureSession alloc] initWithSessionId:[NSUUID UUID]
+    self.currentSession = [[PIPCapSession alloc] initWithSessionId:[NSUUID UUID]
                                                                name:[NSString stringWithFormat:@"Session %@", [NSDate date]]
                                                       configuration:configuration];
     
-    self.currentSession.state = CaptureSessionStateStarting;
+    self.currentSession.state = PIPCapSessionStateStarting;
     self.currentSession.startTime = [[NSDate date] timeIntervalSince1970];
     
     // Notify delegate
     if ([self.delegate respondsToSelector:@selector(packetCaptureDidChangeState:)]) {
-        [self.delegate packetCaptureDidChangeState:CaptureSessionStateStarting];
+        [self.delegate packetCaptureDidChangeState:PIPCapSessionStateStarting];
     }
     
     // In a real implementation, this would start the Network Extension packet capture
     // For now, we'll simulate starting after a delay
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         self.isCapturing = YES;
-        self.currentSession.state = CaptureSessionStateRunning;
+        self.currentSession.state = PIPCapSessionStateRunning;
         
         // Update statistics
         self.statistics[@"startTime"] = @(self.currentSession.startTime);
@@ -341,7 +357,7 @@
         
         // Notify delegate
         if ([self.delegate respondsToSelector:@selector(packetCaptureDidChangeState:)]) {
-            [self.delegate packetCaptureDidChangeState:CaptureSessionStateRunning];
+            [self.delegate packetCaptureDidChangeState:PIPCapSessionStateRunning];
         }
         
         if ([self.delegate respondsToSelector:@selector(packetCaptureDidUpdateStatistics:)]) {
@@ -364,11 +380,11 @@
         return NO;
     }
     
-    self.currentSession.state = CaptureSessionStateStopping;
+    self.currentSession.state = PIPCapSessionStateStopping;
     
     // Notify delegate
     if ([self.delegate respondsToSelector:@selector(packetCaptureDidChangeState:)]) {
-        [self.delegate packetCaptureDidChangeState:CaptureSessionStateStopping];
+        [self.delegate packetCaptureDidChangeState:PIPCapSessionStateStopping];
     }
     
     // In a real implementation, this would stop the Network Extension packet capture
@@ -379,7 +395,7 @@
         
         // Update session duration
         self.currentSession.duration = [[NSDate date] timeIntervalSince1970] - self.currentSession.startTime;
-        self.currentSession.state = CaptureSessionStateStopped;
+        self.currentSession.state = PIPCapSessionStateStopped;
         
         // Clear captured packets if configured
         if (self.currentSession.configuration) {
@@ -389,7 +405,7 @@
         
         // Notify delegate
         if ([self.delegate respondsToSelector:@selector(packetCaptureDidChangeState:)]) {
-            [self.delegate packetCaptureDidChangeState:CaptureSessionStateStopped];
+            [self.delegate packetCaptureDidChangeState:PIPCapSessionStateStopped];
         }
         
         NSLog(@"Packet capture stopped. Captured %lu packets.", (unsigned long)self.capturedPackets.count);
@@ -418,11 +434,11 @@
     }
     
     self.isPaused = YES;
-    self.currentSession.state = CaptureSessionStateStopping; // Using Stopping as "paused" state
+    self.currentSession.state = PIPCapSessionStateStopping; // Using Stopping as "paused" state
     
     // Notify delegate
     if ([self.delegate respondsToSelector:@selector(packetCaptureDidChangeState:)]) {
-        [self.delegate packetCaptureDidChangeState:CaptureSessionStateStopping];
+        [self.delegate packetCaptureDidChangeState:PIPCapSessionStateStopping];
     }
     
     NSLog(@"Packet capture paused.");
@@ -450,11 +466,11 @@
     }
     
     self.isPaused = NO;
-    self.currentSession.state = CaptureSessionStateRunning;
+    self.currentSession.state = PIPCapSessionStateRunning;
     
     // Notify delegate
     if ([self.delegate respondsToSelector:@selector(packetCaptureDidChangeState:)]) {
-        [self.delegate packetCaptureDidChangeState:CaptureSessionStateRunning];
+        [self.delegate packetCaptureDidChangeState:PIPCapSessionStateRunning];
     }
     
     NSLog(@"Packet capture resumed.");
@@ -462,7 +478,7 @@
     return YES;
 }
 
-- (CaptureSession *)currentSession {
+- (PIPCapSession *)currentSession {
     return _currentSession;
 }
 
@@ -565,6 +581,14 @@
 
 - (BOOL)saveCapturedPacketsToURL:(NSURL *)url
                            error:(NSError **)error {
+    if (self.currentSession.configuration.privateMode) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"PacketCaptureService"
+                                         code:403
+                                     userInfo:@{NSLocalizedDescriptionKey: @"Private capture mode: export to file is disabled"}];
+        }
+        return NO;
+    }
     if (self.capturedPackets.count == 0) {
         if (error) {
             *error = [NSError errorWithDomain:@"PacketCaptureService"
@@ -701,15 +725,11 @@
 }
 
 + (BOOL)isVPNPacketExclusionEnabled {
-    // Check if VPN packet exclusion is enabled
-    // This would check system settings or stored configuration
-    return NO;
+    return [[NSUserDefaults standardUserDefaults] boolForKey:kVPNExclusionDefaultsKey];
 }
 
 + (BOOL)setVPNPacketExclusionEnabled:(BOOL)enabled error:(NSError **)error {
-    // Enable/disable VPN packet exclusion
-    // This would require Network Extension configuration
-    NSLog(@"VPN packet exclusion %@", enabled ? @"enabled" : @"disabled");
+    [[NSUserDefaults standardUserDefaults] setBool:enabled forKey:kVPNExclusionDefaultsKey];
     return YES;
 }
 
@@ -719,6 +739,13 @@
 - (void)simulatePacketCapture:(CapturedPacket *)packet {
     if (!self.isCapturing || self.isPaused) {
         return;
+    }
+
+    if ([PacketCaptureService isVPNPacketExclusionEnabled] && [VPNManagerService.sharedService isVPNActive]) {
+        NSString *iface = packet.metadata.interface.lowercaseString ?: @"";
+        if ([iface containsString:@"utun"] || [iface containsString:@"ipsec"]) {
+            return;
+        }
     }
     
     // Apply filters
@@ -780,6 +807,10 @@
         }
         updateCounter = 0;
     }
+}
+
+- (NSArray<CapturedPacket *> *)snapshotCapturedPackets {
+    return [self.capturedPackets copy];
 }
 
 #pragma mark - Description

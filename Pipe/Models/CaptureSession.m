@@ -21,6 +21,7 @@
         _snapshotLength = snapshotLength;
         _timeout = timeout;
         _immediateMode = immediateMode;
+        _privateMode = NO;
     }
     return self;
 }
@@ -43,6 +44,7 @@
         _snapshotLength = [coder decodeIntegerForKey:@"snapshotLength"];
         _timeout = [coder decodeDoubleForKey:@"timeout"];
         _immediateMode = [coder decodeBoolForKey:@"immediateMode"];
+        _privateMode = [coder decodeBoolForKey:@"privateMode"];
     }
     return self;
 }
@@ -53,6 +55,7 @@
     [coder encodeInteger:self.snapshotLength forKey:@"snapshotLength"];
     [coder encodeDouble:self.timeout forKey:@"timeout"];
     [coder encodeBool:self.immediateMode forKey:@"immediateMode"];
+    [coder encodeBool:self.privateMode forKey:@"privateMode"];
 }
 
 #pragma mark - NSCopying
@@ -65,6 +68,7 @@
         copy->_snapshotLength = self.snapshotLength;
         copy->_timeout = self.timeout;
         copy->_immediateMode = self.immediateMode;
+        copy->_privateMode = self.privateMode;
     }
     return copy;
 }

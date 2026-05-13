@@ -1,0 +1,2 @@
+/* App Store / default locale */
+"NEVPNUsageDescription" = "Pipe uses this permission to add an IKEv2 VPN configuration on your device, connect or disconnect the VPN, and show connection status. Traffic is handled by the system VPN stack.";

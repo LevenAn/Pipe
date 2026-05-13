@@ -6,6 +6,7 @@
 //
 
 #import "PacketStorageService.h"
+#import "PCAPExportService.h"
 
 @interface PacketStorageService ()
 
@@ -169,10 +170,13 @@
     self.sessionPackets[sessionKey] = [packets copy];
     self.activeSessions[sessionKey] = session;
     
-    // Save to disk (in a real implementation)
-    [self saveSessionToDisk:session packets:packets];
+    if (!session.configuration.privateMode) {
+        [self saveSessionToDisk:session packets:packets];
+    } else {
+        NSLog(@"Private mode: skipped disk persist for session %@", session.sessionId);
+    }
     
-    NSLog(@"Saved %lu packets for session %@", (unsigned long)packets.count, session.name);
+    NSLog(@"Saved %lu packets for session %@", (unsigned long)packets.count, session.sessionId);
     
     return YES;
 }
@@ -234,7 +238,7 @@
     // Delete from disk
     [self deleteSessionFromDisk:session];
     
-    NSLog(@"Deleted packets for session %@", session.name);
+        NSLog(@"Deleted packets for session %@", session.sessionId);
     
     return YES;
 }
@@ -259,7 +263,7 @@
         [self.activeSessions removeObjectForKey:sessionKey];
         
         // In a real implementation, would move to different storage location
-        NSLog(@"Archived session %@", session.name);
+        NSLog(@"Archived session %@", session.sessionId);
         return YES;
     }
     
@@ -290,7 +294,7 @@
         self.activeSessions[sessionKey] = archivedSession;
         [self.archivedSessions removeObjectForKey:sessionKey];
         
-        NSLog(@"Restored session %@ from archive", session.name);
+        NSLog(@"Restored session %@ from archive", session.sessionId);
         return YES;
     }
     
@@ -423,6 +427,11 @@
                                       userInfo:@{NSLocalizedDescriptionKey: @"No packets to export"}];
         }
         return NO;
+    }
+
+    NSString *ext = url.pathExtension.lowercaseString;
+    if ([ext isEqualToString:@"pcap"]) {
+        return [PCAPExportService exportPackets:packets toURL:url error:error];
     }
     
     // Convert packets to dictionary array
@@ -569,7 +578,7 @@
 - (void)saveSessionToDisk:(CaptureSession *)session packets:(NSArray<CapturedPacket *> *)packets {
     // In a real implementation, this would save to persistent storage
     // For now, we'll just log
-    NSLog(@"Would save session %@ with %lu packets to disk", session.name, (unsigned long)packets.count);
+    NSLog(@"Would save session %@ with %lu packets to disk", session.sessionId, (unsigned long)packets.count);
 }
 
 - (NSArray<CapturedPacket *> *)loadSessionFromDisk:(CaptureSession *)session {
@@ -581,7 +590,7 @@
 - (void)deleteSessionFromDisk:(CaptureSession *)session {
     // In a real implementation, this would delete from persistent storage
     // For now, just log
-    NSLog(@"Would delete session %@ from disk", session.name);
+    NSLog(@"Would delete session %@ from disk", session.sessionId);
 }
 
 #pragma mark - Description

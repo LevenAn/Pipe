@@ -104,7 +104,7 @@
 
 + (instancetype)fullTunnel {
     return [[VPNRouting alloc] initWithSplitTunnel:NO
-                                        allowedIPs:@[@"0.0.0.0/0", "::/0"]
+                                        allowedIPs:@[@"0.0.0.0/0", @"::/0"]
                                      disallowedIPs:@[]];
 }
 
